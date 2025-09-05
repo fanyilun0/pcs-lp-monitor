@@ -113,5 +113,17 @@
     "batch_threshold": 5,
     "enable_stats": true,
     "enable_debug_logs": false
+  },
+  "dexscreener": {
+    "enabled": true,
+    "api_base_url": "https://api.dexscreener.com/latest/dex/pairs",
+    "request_timeout": 15,
+    "priority": 1
+  },
+  "coingecko": {
+    "enabled": true,
+    "api_base_url": "https://api.coingecko.com/api/v3/simple/price",
+    "request_timeout": 15,
+    "priority": 2
   }
 }

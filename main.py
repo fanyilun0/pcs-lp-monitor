@@ -390,28 +390,63 @@ class LPMonitor:
     def get_coingecko_mapping(self) -> Dict[str, str]:
         """获取代币符号到CoinGecko ID的映射"""
         return {
-            'WBNB': 'wbnb',
+            'WBNB': 'binancecoin',  # WBNB应该使用BNB的价格，因为它们1:1兑换
             'BNB': 'binancecoin', 
             'USDT': 'tether',
             'USDC': 'usd-coin',
             'ETH': 'ethereum',
             'BTCB': 'bitcoin',
-            'CAKE': 'pancakeswap-token',
             'MCH': 'monsterra-mch'  # MCH的CoinGecko ID
         }
     
-    def get_mock_prices(self) -> Dict[str, float]:
-        """获取模拟价格"""
+    
+    def get_dexscreener_pair_addresses(self) -> Dict[str, str]:
+        """获取代币到DexScreener交易对地址的映射"""
         return {
-            'WBNB': 320.0,
-            'USDT': 1.0,
-            'MCH': 0.04,  # 示例价格
-            'BNB': 320.0,
-            'USDC': 1.0,
-            'ETH': 2000.0,
-            'BTCB': 35000.0,
-            'CAKE': 2.5
+            'MCH': '0x5b6F666Fb65412338c1eCE48c1acD92a38d716C6',  # MCH/WBNB主要交易对 (从配置中获取)
+            # 对于WBNB，直接从CoinGecko获取会更准确，因为它应该等于BNB价格
         }
+    
+    def fetch_prices_from_dexscreener(self, symbols: List[str]) -> Dict[str, float]:
+        """从DexScreener获取价格"""
+        pair_mapping = self.get_dexscreener_pair_addresses()
+        prices = {}
+        
+        for symbol in symbols:
+            symbol_upper = symbol.upper()
+            pair_address = pair_mapping.get(symbol_upper)
+            
+            if not pair_address:
+                continue
+                
+            try:
+                url = f"https://api.dexscreener.com/latest/dex/pairs/bsc/{pair_address}"
+                self.logger.info(f"从DexScreener获取 {symbol} 价格: {pair_address}")
+                
+                response = requests.get(url, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if 'pair' in data and data['pair']:
+                        pair_data = data['pair']
+                        
+                        # 获取USD价格
+                        price_usd = pair_data.get('priceUsd')
+                        if price_usd:
+                            price = float(price_usd)
+                            prices[symbol_upper] = price
+                            self.logger.info(f"DexScreener价格 {symbol}: ${price}")
+                        else:
+                            self.logger.warning(f"DexScreener未找到 {symbol} 的USD价格")
+                    else:
+                        self.logger.warning(f"DexScreener未找到交易对数据: {pair_address}")
+                else:
+                    self.logger.warning(f"DexScreener API请求失败 {symbol}: {response.status_code}")
+                    
+            except Exception as e:
+                self.logger.warning(f"从DexScreener获取 {symbol} 价格失败: {e}")
+        
+        return prices
     
     def fetch_prices_from_coingecko(self, symbols: List[str]) -> Dict[str, float]:
         """批量从CoinGecko获取价格"""
@@ -458,8 +493,8 @@ class LPMonitor:
         
         return prices
     
-    def get_token_price(self, symbol: str) -> float:
-        """获取代币价格 - 带缓存机制"""
+    def get_token_price(self, symbol: str) -> Optional[float]:
+        """获取代币价格 - 带缓存机制，移除模拟价格逻辑"""
         symbol_upper = symbol.upper()
         
         # 首先检查缓存
@@ -467,36 +502,26 @@ class LPMonitor:
         if cached_price is not None:
             return cached_price
         
-        # 添加到批量请求队列
-        self.batch_request_symbols.add(symbol_upper)
+        # 尝试从DexScreener获取
+        dexscreener_prices = self.fetch_prices_from_dexscreener([symbol_upper])
+        if symbol_upper in dexscreener_prices:
+            price = dexscreener_prices[symbol_upper]
+            self.set_cached_price(symbol_upper, price, 'dexscreener')
+            return price
         
-        # 如果只有一个代币或达到批量阈值，立即请求
-        if len(self.batch_request_symbols) >= 5 or symbol_upper in ['WBNB', 'USDT', 'USDC']:  # 立即请求主要代币
-            prices = self.fetch_prices_from_coingecko(list(self.batch_request_symbols))
-            
-            # 更新缓存
-            for sym, price in prices.items():
-                self.set_cached_price(sym, price, 'coingecko')
-            
-            # 清空批量请求队列
-            self.batch_request_symbols.clear()
-            
-            # 如果成功获取到当前代币价格
-            if symbol_upper in prices:
-                return prices[symbol_upper]
+        # 尝试从CoinGecko获取
+        coingecko_prices = self.fetch_prices_from_coingecko([symbol_upper])
+        if symbol_upper in coingecko_prices:
+            price = coingecko_prices[symbol_upper]
+            self.set_cached_price(symbol_upper, price, 'coingecko')
+            return price
         
-        # 回退到模拟价格
-        mock_prices = self.get_mock_prices()
-        fallback_price = mock_prices.get(symbol_upper, 1.0)
-        
-        # 缓存模拟价格（较短的TTL）
-        self.set_cached_price(symbol_upper, fallback_price, 'mock')
-        
-        self.logger.info(f"使用模拟价格 {symbol}: ${fallback_price}")
-        return fallback_price
+        # 如果都获取失败，返回None
+        self.logger.warning(f"无法获取 {symbol} 的价格，所有API源都失败")
+        return None
     
     def get_multiple_token_prices(self, symbols: List[str]) -> Dict[str, float]:
-        """批量获取多个代币价格"""
+        """批量获取多个代币价格 - 优先使用DexScreener，移除模拟价格"""
         prices = {}
         uncached_symbols = []
         
@@ -510,38 +535,58 @@ class LPMonitor:
         
         # 批量获取未缓存的价格
         if uncached_symbols:
-            api_prices = self.fetch_prices_from_coingecko(uncached_symbols)
-            mock_prices = self.get_mock_prices()
+            # 优先尝试DexScreener
+            dexscreener_prices = self.fetch_prices_from_dexscreener(uncached_symbols)
+            
+            # 对于DexScreener未获取到的，再尝试CoinGecko
+            remaining_symbols = [s for s in uncached_symbols if s.upper() not in dexscreener_prices]
+            coingecko_prices = self.fetch_prices_from_coingecko(remaining_symbols) if remaining_symbols else {}
             
             for symbol in uncached_symbols:
                 symbol_upper = symbol.upper()
-                if symbol_upper in api_prices:
-                    price = api_prices[symbol_upper]
+                if symbol_upper in dexscreener_prices:
+                    price = dexscreener_prices[symbol_upper]
+                    self.set_cached_price(symbol_upper, price, 'dexscreener')
+                    prices[symbol_upper] = price
+                elif symbol_upper in coingecko_prices:
+                    price = coingecko_prices[symbol_upper]
                     self.set_cached_price(symbol_upper, price, 'coingecko')
                     prices[symbol_upper] = price
                 else:
-                    # 使用模拟价格
-                    fallback_price = mock_prices.get(symbol_upper, 1.0)
-                    self.set_cached_price(symbol_upper, fallback_price, 'mock')
-                    prices[symbol_upper] = fallback_price
-                    self.logger.info(f"使用模拟价格 {symbol}: ${fallback_price}")
+                    # 如果无法获取价格，记录警告但不添加到prices中
+                    self.logger.warning(f"无法获取 {symbol} 的价格")
         
         return prices
     
     def calculate_tvl(self, token0_symbol: str, token1_symbol: str, 
-                     token0_amount: float, token1_amount: float) -> Tuple[float, float, float]:
-        """计算TVL - 使用批量价格获取"""
+                     token0_amount: float, token1_amount: float) -> Optional[Tuple[float, float, float, float, float, float, float]]:
+        """计算TVL及各代币占比 - 使用批量价格获取"""
         # 批量获取两个代币的价格
         prices = self.get_multiple_token_prices([token0_symbol, token1_symbol])
         
-        token0_price = prices.get(token0_symbol.upper(), self.get_token_price(token0_symbol))
-        token1_price = prices.get(token1_symbol.upper(), self.get_token_price(token1_symbol))
+        token0_price = prices.get(token0_symbol.upper())
+        token1_price = prices.get(token1_symbol.upper())
         
-        token0_value = token0_amount * token0_price
-        token1_value = token1_amount * token1_price
-        tvl = token0_value + token1_value
+        # 如果任何一个代币价格获取失败，返回None
+        if token0_price is None or token1_price is None:
+            missing_tokens = []
+            if token0_price is None:
+                missing_tokens.append(token0_symbol)
+            if token1_price is None:
+                missing_tokens.append(token1_symbol)
+            self.logger.error(f"无法获取代币价格: {', '.join(missing_tokens)}")
+            return None
         
-        return token0_price, token1_price, tvl
+        # 计算各代币的TVL
+        token0_tvl = token0_amount * token0_price
+        token1_tvl = token1_amount * token1_price
+        total_tvl = token0_tvl + token1_tvl
+        
+        # 计算占比
+        token0_percentage = (token0_tvl / total_tvl * 100) if total_tvl > 0 else 0
+        token1_percentage = (token1_tvl / total_tvl * 100) if total_tvl > 0 else 0
+        
+        return token0_price, token1_price, total_tvl, token0_tvl, token1_tvl, token0_percentage, token1_percentage
     
     def monitor_pool(self, pool_config: Dict) -> Optional[PoolData]:
         """监控单个LP池"""
@@ -560,9 +605,15 @@ class LPMonitor:
         token0_symbol, token1_symbol, token0_amount, token1_amount, _, _ = reserves_data
         
         # 计算价格和TVL
-        token0_price, token1_price, tvl = self.calculate_tvl(
+        tvl_result = self.calculate_tvl(
             token0_symbol, token1_symbol, token0_amount, token1_amount
         )
+        
+        if tvl_result is None:
+            self.logger.error(f"跳过池 {pool_address}，无法获取代币价格")
+            return None
+        
+        token0_price, token1_price, total_tvl, token0_tvl, token1_tvl, token0_percentage, token1_percentage = tvl_result
         
         # 确定目标代币
         target_token = pool_config.get('target_token', token0_symbol)
@@ -584,11 +635,17 @@ class LPMonitor:
             token1_amount=token1_amount,
             token0_price_usd=token0_price,
             token1_price_usd=token1_price,
-            tvl_usd=tvl,
+            tvl_usd=total_tvl,
             target_token=target_token,
             target_token_amount=target_token_amount,
             target_token_price=target_token_price
         )
+        
+        # 添加TVL占比信息到pool_data（用于显示）
+        pool_data.token0_tvl = token0_tvl
+        pool_data.token1_tvl = token1_tvl
+        pool_data.token0_percentage = token0_percentage
+        pool_data.token1_percentage = token1_percentage
         
         return pool_data
     
@@ -662,28 +719,30 @@ class LPMonitor:
         # 打印缓存统计
         with self.price_cache_lock:
             cache_stats = self.get_cache_stats()
-            print(f"💾 价格缓存: {cache_stats['cached_tokens']} 个代币, {cache_stats['api_sources']} API源, {cache_stats['mock_sources']} 模拟源")
+            dex_sources = cache_stats['dexscreener_sources']
+            cg_sources = cache_stats['coingecko_sources']
+            print(f"💾 价格缓存: {cache_stats['cached_tokens']} 个代币 (DexScreener: {dex_sources}, CoinGecko: {cg_sources})")
         
         for data in pool_data_list:
             print(f"\n🏊 {data.pool_name}")
             print(f"   地址: {data.pool_address}")
             print(f"   代币对: {data.token0_symbol}/{data.token1_symbol}")
-            print(f"   {data.token0_symbol}: {data.token0_amount:,.2f} (${data.token0_price_usd:.4f})")
-            print(f"   {data.token1_symbol}: {data.token1_amount:,.2f} (${data.token1_price_usd:.4f})")
-            print(f"   💰 TVL: ${data.tvl_usd:,.2f}")
-            print(f"   🎯 目标代币 {data.target_token}: {data.target_token_amount:,.2f}")
+            print(f"   {data.token0_symbol}: {data.token0_amount:,.2f} (🌹 ${data.token0_price_usd:.4f}) - 🍰 TVL: ${data.token0_tvl:,.2f} ({data.token0_percentage:.1f}%)")
+            print(f"   {data.token1_symbol}: {data.token1_amount:,.2f} (🌹 ${data.token1_price_usd:.4f}) - 🍰 TVL: ${data.token1_tvl:,.2f} ({data.token1_percentage:.1f}%)")
+            print(f"   💰 总TVL: ${data.tvl_usd:,.2f}")
     
     def get_cache_stats(self) -> Dict[str, int]:
         """获取缓存统计信息"""
-        api_sources = sum(1 for entry in self.price_cache.values() 
-                         if entry.get('source') == 'coingecko' and self.is_cache_valid(entry))
-        mock_sources = sum(1 for entry in self.price_cache.values() 
-                          if entry.get('source') == 'mock' and self.is_cache_valid(entry))
+        dexscreener_sources = sum(1 for entry in self.price_cache.values() 
+                                 if entry.get('source') == 'dexscreener' and self.is_cache_valid(entry))
+        coingecko_sources = sum(1 for entry in self.price_cache.values() 
+                               if entry.get('source') == 'coingecko' and self.is_cache_valid(entry))
         
         return {
             'cached_tokens': len([entry for entry in self.price_cache.values() if self.is_cache_valid(entry)]),
-            'api_sources': api_sources,
-            'mock_sources': mock_sources
+            'dexscreener_sources': dexscreener_sources,
+            'coingecko_sources': coingecko_sources,
+            'mock_sources': 0  # 移除模拟价格统计
         }
     
     def clear_expired_cache(self) -> None:
