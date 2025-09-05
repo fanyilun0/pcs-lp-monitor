@@ -1,0 +1,149 @@
+帮我写一个基于PYTHON技术栈来监听 pancake 流动性特定TOKEN 的 TVL 变化
+如可以通过特定或者合约地址(如0xF8F331DFa811132c43C308757CD802ca982b7211）来查询到LP：
+如TOKEN/WBNB 和 TOKEN/USDT 的LP池中的代币各自的数量，
+仅需要监听这两个LP池，不需要其他；可以通过配置来拓展；
+可以考虑通过pcs的api获取通过网页爬虫来获取， 以下是LP网页中暴露的信息；
+
+ALL POOLSFEE TIERAPR
+TVL
+VOLUME 24H
+POOL TYPEPOOL FEATURE
+WBNB / MCH
+
+BNB SMART CHAINV3
+|
+0.01%
+
+405.69%
+$ 2,418,373.5
+$ 268M
+v3
+-
+
+
+USDT / MCH
+
+BNB SMART CHAINV3
+|
+0.01%
+
+339.93%
+$ 536,614.45
+$ 50,080,381
+v3
+-
+
+
+WBNB / MCH
+
+BNB SMART CHAINV3
+|
+1%
+
+0%
+$ 873,936.64
+$ 0
+v3
+-
+
+
+WBNB / MCH
+
+BNB SMART CHAINV3
+|
+0.05%
+
+64.69K%
+$ 431.72
+$ 1,530,215.8
+v3
+-
+
+
+USDT / MCH
+
+BNB SMART CHAINV3
+|
+0.25%
+
+110.33K%
+$ 1.56
+$ 1,892.32
+v3
+-
+
+
+USDT / MCH
+
+BNB SMART CHAINV3
+|
+0.05%
+
+107.36K%
+$ 0.0092804
+$ 54.59
+v3
+-
+
+
+USDT / MCH
+
+BNB SMART CHAINV3
+|
+1%
+
+583.44%
+$ 162,482.72
+$ 234,283.68
+v3
+-
+
+
+BNB / MCH
+
+BNB SMART CHAINInfinity
+|
+0.01%
+3,247.51%
+$ 329.83
+$ 438,008.18
+CLAMM
+-
+
+并实时监听LP中代币的变化， 如：
+
+Farms
+
+USDT / MCH
+
+
+
+USDT
+/
+MCH
+
+0.01%
+v3
+
+25.7272
+MCH = 1 USDT
+EST. APR
+
+378.88%
+Volume
+Liquidity
+Fees
+TVL
+
+$72.24M
+
+TOTAL VALUE LOCKED (TVL)
+$543.13K
+
+11.34%
+
+USDT
+188.16K
+MCH
+
+9.13M

@@ -1,0 +1,117 @@
+{
+  "network": {
+    "name": "BSC",
+    "chain_id": 56,
+    "rpc_url": "https://bsc-dataseed1.binance.org/",
+    "explorer": "https://bscscan.com"
+  },
+  "monitoring": {
+    "interval_seconds": 30,
+    "log_changes": true,
+    "save_history": true,
+    "alert_threshold_percent": 5.0
+  },
+  "pools": [
+    {
+      "id": "mch_wbnb_001",
+      "name": "MCH/WBNB Pool (1%)",
+      "contract_address": "0x5b6F666Fb65412338c1eCE48c1acD92a38d716C6",
+      "token0": {
+        "symbol": "WBNB",
+        "contract_address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+        "decimals": 18
+      },
+      "token1": {
+        "symbol": "MCH",
+        "contract_address": "0xF8F331DFa811132c43C308757CD802ca982b7211",
+        "decimals": 18
+      },
+      "fee_tier": "1%",
+      "pool_type": "v3",
+      "enabled": true,
+      "target_token": "MCH"
+    },
+    {
+      "id": "mch_wbnb_001",
+      "name": "MCH/WBNB Pool (0.01%)",
+      "contract_address": "0xf8F01e491697F2dC668515E74F0F37d6C15C3981",
+      "token0": {
+        "symbol": "WBNB",
+        "contract_address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+        "decimals": 18
+      },
+      "token1": {
+        "symbol": "MCH",
+        "contract_address": "0xF8F331DFa811132c43C308757CD802ca982b7211",
+        "decimals": 18
+      },
+      "fee_tier": "1%",
+      "pool_type": "v3",
+      "enabled": true,
+      "target_token": "MCH"
+    },
+    {
+      "id": "mch_usdt_001",
+      "name": "MCH/USDT Pool (0.01%)",
+      "contract_address": "0x80ac0E667FFB98912a590b78e82942E8BEC02A28",
+      "token0": {
+        "symbol": "USDT",
+        "contract_address": "0x80ac0E667FFB98912a590b78e82942E8BEC02A28",
+        "decimals": 18
+      },
+      "token1": {
+        "symbol": "MCH",
+        "contract_address": "0xF8F331DFa811132c43C308757CD802ca982b7211",
+        "decimals": 18
+      },
+      "fee_tier": "1%",
+      "pool_type": "v3",
+      "enabled": true,
+      "target_token": "MCH"
+    }
+    
+  ],
+  "tokens": {
+    "MCH": {
+      "contract_address": "0xF8F331DFa811132c43C308757CD802ca982b7211",
+      "symbol": "MCH",
+      "name": "Moonchain",
+      "decimals": 18,
+      "priority": true
+    },
+    "WBNB": {
+      "contract_address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+      "symbol": "WBNB",
+      "name": "Wrapped BNB",
+      "decimals": 18,
+      "priority": false
+    },
+    "USDT": {
+      "contract_address": "0x55d398326f99059fF775485246999027B3197955",
+      "symbol": "USDT",
+      "name": "Tether USD",
+      "decimals": 18,
+      "priority": false
+    }
+  },
+  "output": {
+    "console_log": true,
+    "file_log": true,
+    "log_directory": "./logs",
+    "data_directory": "./data",
+    "export_csv": true,
+    "export_json": true
+  },
+  "api_settings": {
+    "pancakeswap_v3_factory": "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
+    "pancakeswap_v3_quoter": "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+    "request_timeout": 30,
+    "retry_attempts": 3
+  },
+  "price_cache": {
+    "ttl_minutes": 5,
+    "batch_threshold": 5,
+    "enable_stats": true,
+    "enable_debug_logs": false
+  }
+}
