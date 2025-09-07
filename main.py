@@ -388,24 +388,39 @@ class LPMonitor:
             }
     
     def get_coingecko_mapping(self) -> Dict[str, str]:
-        """获取代币符号到CoinGecko ID的映射"""
-        return {
+        """从配置文件动态获取代币符号到CoinGecko ID的映射"""
+        mapping = {
             'WBNB': 'binancecoin',  # WBNB应该使用BNB的价格，因为它们1:1兑换
             'BNB': 'binancecoin', 
             'USDT': 'tether',
             'USDC': 'usd-coin',
             'ETH': 'ethereum',
             'BTCB': 'bitcoin',
-            'MCH': 'monsterra-mch'  # MCH的CoinGecko ID
         }
+        
+        # 从配置文件的tokens部分获取额外的映射
+        tokens_config = self.config.get('tokens', {})
+        for token_symbol, token_info in tokens_config.items():
+            if 'coingecko_id' in token_info:
+                mapping[token_symbol.upper()] = token_info['coingecko_id']
+        
+        return mapping
     
     
     def get_dexscreener_pair_addresses(self) -> Dict[str, str]:
-        """获取代币到DexScreener交易对地址的映射"""
-        return {
-            'MCH': '0x5b6F666Fb65412338c1eCE48c1acD92a38d716C6',  # MCH/WBNB主要交易对 (从配置中获取)
-            # 对于WBNB，直接从CoinGecko获取会更准确，因为它应该等于BNB价格
-        }
+        """从配置文件动态获取代币到DexScreener交易对地址的映射"""
+        mapping = {}
+        
+        # 从配置文件的pools部分获取交易对地址
+        pools_config = self.config.get('pools', [])
+        for pool in pools_config:
+            if pool.get('enabled', True):
+                target_token = pool.get('target_token')
+                pool_address = pool.get('contract_address')
+                if target_token and pool_address:
+                    mapping[target_token.upper()] = pool_address
+        
+        return mapping
     
     def fetch_prices_from_dexscreener(self, symbols: List[str]) -> Dict[str, float]:
         """从DexScreener获取价格"""
@@ -649,8 +664,20 @@ class LPMonitor:
         
         return pool_data
     
+    def get_alert_emoji(self, percent: float, threshold: float = 5.0) -> str:
+        """根据变化百分比获取警告emoji"""
+        abs_percent = abs(percent)
+        if abs_percent >= threshold * 3:  # 超过阈值3倍
+            return "🚨" if percent < 0 else "🎉"
+        elif abs_percent >= threshold * 2:  # 超过阈值2倍
+            return "⚠️" if percent < 0 else "📈"
+        elif abs_percent >= threshold:  # 超过阈值
+            return "🔻" if percent < 0 else "🔺"
+        else:
+            return "ℹ️"
+
     def check_for_changes(self, current_data: PoolData) -> None:
-        """检查变化并报告"""
+        """检查变化并报告 - 带颜色emoji警告"""
         pool_address = current_data.pool_address
         threshold = self.config['monitoring'].get('alert_threshold_percent', 5.0)
         
@@ -665,9 +692,19 @@ class LPMonitor:
                                    prev_data.target_token_amount) * 100
             
             if abs(tvl_change_percent) >= threshold or abs(target_change_percent) >= threshold:
-                self.logger.warning(f"🚨 {current_data.pool_name} 检测到重大变化:")
-                self.logger.warning(f"   TVL变化: {tvl_change_percent:.2f}% (${prev_data.tvl_usd:.2f} -> ${current_data.tvl_usd:.2f})")
-                self.logger.warning(f"   {current_data.target_token}数量变化: {target_change_percent:.2f}% ({prev_data.target_token_amount:.2f} -> {current_data.target_token_amount:.2f})")
+                # 获取合适的警告emoji
+                tvl_emoji = self.get_alert_emoji(tvl_change_percent, threshold)
+                token_emoji = self.get_alert_emoji(target_change_percent, threshold)
+                
+                self.logger.warning(f"{tvl_emoji} {current_data.pool_name} 检测到重大变化:")
+                
+                # TVL变化颜色标识
+                tvl_color = "🟢" if tvl_change_percent > 0 else "🔴"
+                self.logger.warning(f"   {tvl_color} TVL变化: {tvl_change_percent:.2f}% (${prev_data.tvl_usd:.2f} -> ${current_data.tvl_usd:.2f})")
+                
+                # 代币数量变化颜色标识
+                token_color = "🟢" if target_change_percent > 0 else "🔴"
+                self.logger.warning(f"   {token_color} {current_data.target_token}数量变化: {target_change_percent:.2f}% ({prev_data.target_token_amount:.2f} -> {current_data.target_token_amount:.2f})")
         
         self.previous_data[pool_address] = current_data
     
@@ -710,11 +747,24 @@ class LPMonitor:
                 for data in pool_data_list:
                     writer.writerow(asdict(data))
     
+    def format_change_percent(self, percent: float, threshold: float = 5.0) -> str:
+        """格式化变化百分比并添加合适的emoji"""
+        if abs(percent) >= threshold:
+            if percent > 0:
+                return f"🟢 +{percent:.2f}%"  # 绿色上涨
+            else:
+                return f"🔴 {percent:.2f}%"   # 红色下跌
+        else:
+            if percent > 0:
+                return f"⚪ +{percent:.2f}%"  # 白色小幅上涨
+            else:
+                return f"⚪ {percent:.2f}%"   # 白色小幅下跌
+
     def print_status(self, pool_data_list: List[PoolData]) -> None:
-        """打印当前状态"""
-        print("\n" + "="*80)
+        """打印当前状态 - 详细表格化显示"""
+        print("\n" + "="*160)
         print(f"📊 LP池监控状态 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("="*80)
+        print("="*160)
         
         # 打印缓存统计
         with self.price_cache_lock:
@@ -724,12 +774,60 @@ class LPMonitor:
             print(f"💾 价格缓存: {cache_stats['cached_tokens']} 个代币 (DexScreener: {dex_sources}, CoinGecko: {cg_sources})")
         
         for data in pool_data_list:
+            # 计算变化百分比
+            tvl_change = ""
+            token0_change = ""
+            token1_change = ""
+            threshold = self.config['monitoring'].get('alert_threshold_percent', 5.0)
+            
+            if data.pool_address in self.previous_data:
+                prev_data = self.previous_data[data.pool_address]
+                tvl_change_percent = ((data.tvl_usd - prev_data.tvl_usd) / prev_data.tvl_usd) * 100
+                token0_change_percent = ((data.token0_amount - prev_data.token0_amount) / prev_data.token0_amount) * 100
+                token1_change_percent = ((data.token1_amount - prev_data.token1_amount) / prev_data.token1_amount) * 100
+                
+                tvl_change = self.format_change_percent(tvl_change_percent, threshold)
+                token0_change = self.format_change_percent(token0_change_percent, threshold)
+                token1_change = self.format_change_percent(token1_change_percent, threshold)
+            else:
+                tvl_change = "⚪ 首次"
+                token0_change = "⚪ 首次"
+                token1_change = "⚪ 首次"
+            
             print(f"\n🏊 {data.pool_name}")
-            print(f"   地址: {data.pool_address}")
-            print(f"   代币对: {data.token0_symbol}/{data.token1_symbol}")
-            print(f"   {data.token0_symbol}: {data.token0_amount:,.2f} (🌹 ${data.token0_price_usd:.4f}) - 🍰 TVL: ${data.token0_tvl:,.2f} ({data.token0_percentage:.1f}%)")
-            print(f"   {data.token1_symbol}: {data.token1_amount:,.2f} (🌹 ${data.token1_price_usd:.4f}) - 🍰 TVL: ${data.token1_tvl:,.2f} ({data.token1_percentage:.1f}%)")
-            print(f"   💰 总TVL: ${data.tvl_usd:,.2f}")
+            print(f"📍 地址: {data.pool_address}")
+            print(f"🔗 代币对: {data.token0_symbol}/{data.token1_symbol}")
+            
+            # 详细表格标题
+            print(f"\n{'代币':<6} {'数量':<18} {'价格(USD)':<12} {'变化':<15} {'TVL(USD)':<18} {'占比':<8}")
+            print("-" * 85)
+            
+            # Token0 信息
+            token0_amount_str = f"{data.token0_amount:,.2f}"
+            token0_price_str = f"${data.token0_price_usd:.4f}"
+            token0_tvl_str = f"${data.token0_tvl:,.2f}"
+            token0_percentage_str = f"{data.token0_percentage:.1f}%"
+            
+            print(f"{data.token0_symbol:<6} {token0_amount_str:<18} {token0_price_str:<12} {token0_change:<15} {token0_tvl_str:<18} {token0_percentage_str:<8}")
+            
+            # Token1 信息
+            token1_amount_str = f"{data.token1_amount:,.2f}"
+            token1_price_str = f"${data.token1_price_usd:.4f}"
+            token1_tvl_str = f"${data.token1_tvl:,.2f}"
+            token1_percentage_str = f"{data.token1_percentage:.1f}%"
+            
+            print(f"{data.token1_symbol:<6} {token1_amount_str:<18} {token1_price_str:<12} {token1_change:<15} {token1_tvl_str:<18} {token1_percentage_str:<8}")
+            
+            print("-" * 85)
+            
+            # 总TVL信息
+            total_tvl_str = f"${data.tvl_usd:,.2f}"
+            target_marker = "🎯" if data.target_token == data.token0_symbol else "🎯" if data.target_token == data.token1_symbol else ""
+            
+            print(f"{'总计':<6} {'':<18} {'':<12} {tvl_change:<15} {total_tvl_str:<18} {'100.0%':<8}")
+            print(f"🎯 目标代币: {data.target_token} ({data.target_token_amount:,.2f})")
+            
+        print("\n" + "="*160)
     
     def get_cache_stats(self) -> Dict[str, int]:
         """获取缓存统计信息"""
@@ -787,10 +885,14 @@ class LPMonitor:
                 # 预先批量获取所有需要的代币价格
                 all_symbols = set()
                 for pool_config in enabled_pools:
-                    # 从配置中获取代币符号，避免重复的合约调用
-                    if 'token0' in pool_config and 'token1' in pool_config:
-                        all_symbols.add(pool_config['token0']['symbol'])
-                        all_symbols.add(pool_config['token1']['symbol'])
+                    # 动态获取池中的代币符号
+                    pool_address = pool_config['contract_address']
+                    pool_type = pool_config.get('pool_type', 'v3')
+                    reserves_data = self.get_pool_reserves(pool_address, pool_type)
+                    if reserves_data:
+                        token0_symbol, token1_symbol, _, _, _, _ = reserves_data
+                        all_symbols.add(token0_symbol)
+                        all_symbols.add(token1_symbol)
                 
                 if all_symbols:
                     self.logger.info(f"预加载 {len(all_symbols)} 个代币价格到缓存")

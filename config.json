@@ -13,85 +13,40 @@
   },
   "pools": [
     {
-      "id": "mch_wbnb_001",
       "name": "MCH/WBNB Pool (1%)",
       "contract_address": "0x5b6F666Fb65412338c1eCE48c1acD92a38d716C6",
-      "token0": {
-        "symbol": "WBNB",
-        "contract_address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
-        "decimals": 18
-      },
-      "token1": {
-        "symbol": "MCH",
-        "contract_address": "0xF8F331DFa811132c43C308757CD802ca982b7211",
-        "decimals": 18
-      },
-      "fee_tier": "1%",
       "pool_type": "v3",
       "enabled": true,
       "target_token": "MCH"
     },
     {
-      "id": "mch_wbnb_001",
       "name": "MCH/WBNB Pool (0.01%)",
       "contract_address": "0xf8F01e491697F2dC668515E74F0F37d6C15C3981",
-      "token0": {
-        "symbol": "WBNB",
-        "contract_address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
-        "decimals": 18
-      },
-      "token1": {
-        "symbol": "MCH",
-        "contract_address": "0xF8F331DFa811132c43C308757CD802ca982b7211",
-        "decimals": 18
-      },
-      "fee_tier": "1%",
       "pool_type": "v3",
       "enabled": true,
       "target_token": "MCH"
     },
     {
-      "id": "mch_usdt_001",
       "name": "MCH/USDT Pool (0.01%)",
       "contract_address": "0x80ac0E667FFB98912a590b78e82942E8BEC02A28",
-      "token0": {
-        "symbol": "USDT",
-        "contract_address": "0x80ac0E667FFB98912a590b78e82942E8BEC02A28",
-        "decimals": 18
-      },
-      "token1": {
-        "symbol": "MCH",
-        "contract_address": "0xF8F331DFa811132c43C308757CD802ca982b7211",
-        "decimals": 18
-      },
-      "fee_tier": "1%",
       "pool_type": "v3",
       "enabled": true,
       "target_token": "MCH"
+    },
+    {
+      "name": "MTP/USDT Pool (0.01%)",
+      "contract_address": "0x8286122C7aEe0599A8CC6582642f49A33552C382",
+      "pool_type": "v3",
+      "enabled": true,
+      "target_token": "MTP"
     }
-    
   ],
   "tokens": {
     "MCH": {
-      "contract_address": "0xF8F331DFa811132c43C308757CD802ca982b7211",
-      "symbol": "MCH",
-      "name": "Moonchain",
-      "decimals": 18,
-      "priority": true
+      "coingecko_id": "monsterra-mch"
     },
-    "WBNB": {
-      "contract_address": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
-      "symbol": "WBNB",
-      "name": "Wrapped BNB",
-      "decimals": 18,
-      "priority": false
-    },
-    "USDT": {
-      "contract_address": "0x55d398326f99059fF775485246999027B3197955",
-      "symbol": "USDT",
-      "name": "Tether USD",
-      "decimals": 18,
-      "priority": false
+    "MTP": {
+      "coingecko_id": "moonchain-token"
     }
   },
   "output": {
