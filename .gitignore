@@ -1,3 +1,7 @@
 __pycache__
 data
 logs
+.vscode
+.idea   
+.DS_Store
+.env

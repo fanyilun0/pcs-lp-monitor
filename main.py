@@ -15,6 +15,8 @@ from dataclasses import dataclass, asdict
 import logging
 import requests
 from threading import Lock
+import asyncio
+from webhook import send_message_async
 
 
 @dataclass
@@ -676,6 +678,72 @@ class LPMonitor:
         else:
             return "ℹ️"
 
+    def send_alert_webhook(self, current_data: PoolData, prev_data: PoolData, 
+                          tvl_change_percent: float, target_change_percent: float, threshold: float) -> None:
+        """发送报警信息到 webhook"""
+        try:
+            # 构建详细的报警消息
+            alert_emoji = self.get_alert_emoji(max(abs(tvl_change_percent), abs(target_change_percent)), threshold)
+            
+            message = f"🚨 LP池报警通知\n"
+            message += f"═══════════════════════\n"
+            message += f"{alert_emoji} 池名称: {current_data.pool_name}\n"
+            message += f"📅 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            
+            # TVL变化信息
+            tvl_color = "🟢" if tvl_change_percent > 0 else "🔴"
+            message += f"💰 TVL变化:\n"
+            message += f"   {tvl_color} 变化幅度: {tvl_change_percent:+.2f}%\n"
+            message += f"   📊 变化前: ${prev_data.tvl_usd:,.2f}\n"
+            message += f"   📊 变化后: ${current_data.tvl_usd:,.2f}\n"
+            message += f"   💵 变化金额: ${abs(current_data.tvl_usd - prev_data.tvl_usd):,.2f}\n\n"
+            
+            # 目标代币数量变化
+            token_color = "🟢" if target_change_percent > 0 else "🔴"
+            message += f"🪙 {current_data.target_token} 数量变化:\n"
+            message += f"   {token_color} 变化幅度: {target_change_percent:+.2f}%\n"
+            message += f"   📈 变化前: {prev_data.target_token_amount:,.2f}\n"
+            message += f"   📈 变化后: {current_data.target_token_amount:,.2f}\n"
+            message += f"   📊 变化数量: {abs(current_data.target_token_amount - prev_data.target_token_amount):,.2f}\n\n"
+            
+            # 详细代币信息
+            message += f"📋 当前池详情:\n"
+            message += f"═══════════════════════\n"
+            message += f"🔸 {current_data.token0_symbol}:\n"
+            message += f"   💰 数量: {current_data.token0_amount:,.2f}\n"
+            message += f"   💲 价格: ${current_data.token0_price_usd:.6f}\n"
+            message += f"   📊 TVL: ${current_data.token0_tvl:,.2f} ({current_data.token0_percentage:.1f}%)\n\n"
+            
+            message += f"🔹 {current_data.token1_symbol}:\n"
+            message += f"   💰 数量: {current_data.token1_amount:,.2f}\n"
+            message += f"   💲 价格: ${current_data.token1_price_usd:.6f}\n"
+            message += f"   📊 TVL: ${current_data.token1_tvl:,.2f} ({current_data.token1_percentage:.1f}%)\n\n"
+            
+            message += f"🔗 池地址: {current_data.pool_address[:10]}...{current_data.pool_address[-8:]}\n"
+            message += f"💎 总 TVL: ${current_data.tvl_usd:,.2f}"
+            
+            # 异步发送消息
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 如果已经在异步上下文中，使用 create_task
+                    asyncio.create_task(send_message_async(message))
+                else:
+                    # 如果不在异步上下文中，创建新的事件循环
+                    asyncio.run(send_message_async(message))
+            except RuntimeError:
+                # 如果在线程中运行，使用 run_coroutine_threadsafe
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(send_message_async(message))
+                    loop.close()
+                except Exception as e:
+                    self.logger.error(f"发送webhook消息失败: {e}")
+                    
+        except Exception as e:
+            self.logger.error(f"构建或发送webhook报警消息失败: {e}")
+
     def check_for_changes(self, current_data: PoolData) -> None:
         """检查变化并报告 - 带颜色emoji警告"""
         pool_address = current_data.pool_address
@@ -705,6 +773,9 @@ class LPMonitor:
                 # 代币数量变化颜色标识
                 token_color = "🟢" if target_change_percent > 0 else "🔴"
                 self.logger.warning(f"   {token_color} {current_data.target_token}数量变化: {target_change_percent:.2f}% ({prev_data.target_token_amount:.2f} -> {current_data.target_token_amount:.2f})")
+                
+                # 发送详细信息到 webhook
+                self.send_alert_webhook(current_data, prev_data, tvl_change_percent, target_change_percent, threshold)
         
         self.previous_data[pool_address] = current_data
     
@@ -761,86 +832,52 @@ class LPMonitor:
                 return f"⚪ {percent:.2f}%"   # 白色小幅下跌
 
     def print_status(self, pool_data_list: List[PoolData]) -> None:
-        """打印当前状态 - 详细表格化显示"""
-        print("\n" + "="*160)
+        """打印当前状态 - 统一表格显示所有LP池"""
+        print("\n" + "="*52)
         print(f"📊 LP池监控状态 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("="*160)
+        print("="*52)
         
         # 打印缓存统计
         with self.price_cache_lock:
             cache_stats = self.get_cache_stats()
             dex_sources = cache_stats['dexscreener_sources']
-            cg_sources = cache_stats['coingecko_sources']
-            print(f"💾 价格缓存: {cache_stats['cached_tokens']} 个代币 (DexScreener: {dex_sources}, CoinGecko: {cg_sources})")
+            print(f"💾 价格缓存: {cache_stats['cached_tokens']} 个代币 (DexScreener: {dex_sources})")
+        
+        if not pool_data_list:
+            print("❌ 没有数据显示")
+            return
+        print("="*52)
+        
+        # 统一表格头部
+        print(f"\n{'池名称':<25} {'代币对':<12} {'TVL(USD)':<15}")
+        print("-" * 52)
+        
+        threshold = self.config['monitoring'].get('alert_threshold_percent', 5.0)
         
         for data in pool_data_list:
-            # 计算变化百分比
-            tvl_change = ""
-            token0_change = ""
-            token1_change = ""
-            threshold = self.config['monitoring'].get('alert_threshold_percent', 5.0)
+            # 格式化数据
+            pool_name = data.pool_name[:23] + ".." if len(data.pool_name) > 25 else data.pool_name
+            token_pair = f"{data.token0_symbol}/{data.token1_symbol}"[:10]
+            tvl_str = f"${data.tvl_usd:,.0f}"
             
-            if data.pool_address in self.previous_data:
-                prev_data = self.previous_data[data.pool_address]
-                tvl_change_percent = ((data.tvl_usd - prev_data.tvl_usd) / prev_data.tvl_usd) * 100
-                token0_change_percent = ((data.token0_amount - prev_data.token0_amount) / prev_data.token0_amount) * 100
-                token1_change_percent = ((data.token1_amount - prev_data.token1_amount) / prev_data.token1_amount) * 100
-                
-                tvl_change = self.format_change_percent(tvl_change_percent, threshold)
-                token0_change = self.format_change_percent(token0_change_percent, threshold)
-                token1_change = self.format_change_percent(token1_change_percent, threshold)
-            else:
-                tvl_change = "⚪ 首次"
-                token0_change = "⚪ 首次"
-                token1_change = "⚪ 首次"
+            # 打印主要信息行
+            print(f"{pool_name:<25} {token_pair:<12} {tvl_str:<15}")
             
-            print(f"\n🏊 {data.pool_name}")
-            print(f"📍 地址: {data.pool_address}")
-            print(f"🔗 代币对: {data.token0_symbol}/{data.token1_symbol}")
-            
-            # 详细表格标题
-            print(f"\n{'代币':<6} {'数量':<18} {'价格(USD)':<12} {'变化':<15} {'TVL(USD)':<18} {'占比':<8}")
-            print("-" * 85)
-            
-            # Token0 信息
-            token0_amount_str = f"{data.token0_amount:,.2f}"
-            token0_price_str = f"${data.token0_price_usd:.4f}"
-            token0_tvl_str = f"${data.token0_tvl:,.2f}"
-            token0_percentage_str = f"{data.token0_percentage:.1f}%"
-            
-            print(f"{data.token0_symbol:<6} {token0_amount_str:<18} {token0_price_str:<12} {token0_change:<15} {token0_tvl_str:<18} {token0_percentage_str:<8}")
-            
-            # Token1 信息
-            token1_amount_str = f"{data.token1_amount:,.2f}"
-            token1_price_str = f"${data.token1_price_usd:.4f}"
-            token1_tvl_str = f"${data.token1_tvl:,.2f}"
-            token1_percentage_str = f"{data.token1_percentage:.1f}%"
-            
-            print(f"{data.token1_symbol:<6} {token1_amount_str:<18} {token1_price_str:<12} {token1_change:<15} {token1_tvl_str:<18} {token1_percentage_str:<8}")
-            
-            print("-" * 85)
-            
-            # 总TVL信息
-            total_tvl_str = f"${data.tvl_usd:,.2f}"
-            target_marker = "🎯" if data.target_token == data.token0_symbol else "🎯" if data.target_token == data.token1_symbol else ""
-            
-            print(f"{'总计':<6} {'':<18} {'':<12} {tvl_change:<15} {total_tvl_str:<18} {'100.0%':<8}")
-            print(f"🎯 目标代币: {data.target_token} ({data.target_token_amount:,.2f})")
-            
-        print("\n" + "="*160)
+            # 打印详细代币信息（缩进显示）
+            print(f"  ├─ {data.token0_symbol}: {data.token0_amount:,.2f} @ ${data.token0_price_usd:.4f} (${data.token0_tvl:,.0f}, {data.token0_percentage:.1f}%)")
+            print(f"  └─ {data.token1_symbol}: {data.token1_amount:,.2f} @ ${data.token1_price_usd:.4f} (${data.token1_tvl:,.0f}, {data.token1_percentage:.1f}%)")
+            print()
+        
+        print("="*52)
     
     def get_cache_stats(self) -> Dict[str, int]:
         """获取缓存统计信息"""
         dexscreener_sources = sum(1 for entry in self.price_cache.values() 
                                  if entry.get('source') == 'dexscreener' and self.is_cache_valid(entry))
-        coingecko_sources = sum(1 for entry in self.price_cache.values() 
-                               if entry.get('source') == 'coingecko' and self.is_cache_valid(entry))
         
         return {
             'cached_tokens': len([entry for entry in self.price_cache.values() if self.is_cache_valid(entry)]),
-            'dexscreener_sources': dexscreener_sources,
-            'coingecko_sources': coingecko_sources,
-            'mock_sources': 0  # 移除模拟价格统计
+            'dexscreener_sources': dexscreener_sources
         }
     
     def clear_expired_cache(self) -> None:
