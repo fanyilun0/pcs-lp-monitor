@@ -16,14 +16,14 @@
       "name": "MCH/WBNB Pool (1%)",
       "contract_address": "0x5b6F666Fb65412338c1eCE48c1acD92a38d716C6",
       "pool_type": "v3",
-      "enabled": true,
+      "enabled": false,
       "target_token": "MCH"
     },
     {
       "name": "MCH/WBNB Pool (0.01%)",
       "contract_address": "0xf8F01e491697F2dC668515E74F0F37d6C15C3981",
       "pool_type": "v3",
-      "enabled": true,
+      "enabled": false,
       "target_token": "MCH"
     },
     {

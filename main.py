@@ -682,45 +682,39 @@ class LPMonitor:
                           tvl_change_percent: float, target_change_percent: float, threshold: float) -> None:
         """发送报警信息到 webhook"""
         try:
-            # 构建详细的报警消息
+            # 简化的报警消息
             alert_emoji = self.get_alert_emoji(max(abs(tvl_change_percent), abs(target_change_percent)), threshold)
             
-            message = f"🚨 LP池报警通知\n"
-            message += f"═══════════════════════\n"
-            message += f"{alert_emoji} 池名称: {current_data.pool_name}\n"
-            message += f"📅 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+            # 基本信息
+            message = f"{alert_emoji} {current_data.pool_name} LP池报警\n"
+            message += f"时间: {datetime.now().strftime('%m-%d %H:%M:%S')}\n\n"
             
-            # TVL变化信息
+            # TVL变化
             tvl_color = "🟢" if tvl_change_percent > 0 else "🔴"
-            message += f"💰 TVL变化:\n"
-            message += f"   {tvl_color} 变化幅度: {tvl_change_percent:+.2f}%\n"
-            message += f"   📊 变化前: ${prev_data.tvl_usd:,.2f}\n"
-            message += f"   📊 变化后: ${current_data.tvl_usd:,.2f}\n"
-            message += f"   💵 变化金额: ${abs(current_data.tvl_usd - prev_data.tvl_usd):,.2f}\n\n"
+            message += f"{tvl_color} TVL: {tvl_change_percent:+.2f}% (${prev_data.tvl_usd:,.0f} → ${current_data.tvl_usd:,.0f})\n"
             
-            # 目标代币数量变化
+            # 目标代币变化
             token_color = "🟢" if target_change_percent > 0 else "🔴"
-            message += f"🪙 {current_data.target_token} 数量变化:\n"
-            message += f"   {token_color} 变化幅度: {target_change_percent:+.2f}%\n"
-            message += f"   📈 变化前: {prev_data.target_token_amount:,.2f}\n"
-            message += f"   📈 变化后: {current_data.target_token_amount:,.2f}\n"
-            message += f"   📊 变化数量: {abs(current_data.target_token_amount - prev_data.target_token_amount):,.2f}\n\n"
+            message += f"{token_color} {current_data.target_token}: {target_change_percent:+.2f}% ({prev_data.target_token_amount:,.0f} → {current_data.target_token_amount:,.0f})\n\n"
             
-            # 详细代币信息
-            message += f"📋 当前池详情:\n"
-            message += f"═══════════════════════\n"
-            message += f"🔸 {current_data.token0_symbol}:\n"
-            message += f"   💰 数量: {current_data.token0_amount:,.2f}\n"
-            message += f"   💲 价格: ${current_data.token0_price_usd:.6f}\n"
-            message += f"   📊 TVL: ${current_data.token0_tvl:,.2f} ({current_data.token0_percentage:.1f}%)\n\n"
+            # 两个代币的详细变化
+            # Token0变化
+            token0_amount_change = ((current_data.token0_amount - prev_data.token0_amount) / prev_data.token0_amount) * 100
+            token0_tvl_change = ((current_data.token0_tvl - prev_data.token0_tvl) / prev_data.token0_tvl) * 100
+            token0_emoji = "🟢" if token0_amount_change > 0 else "🔴"
             
-            message += f"🔹 {current_data.token1_symbol}:\n"
-            message += f"   💰 数量: {current_data.token1_amount:,.2f}\n"
-            message += f"   💲 价格: ${current_data.token1_price_usd:.6f}\n"
-            message += f"   📊 TVL: ${current_data.token1_tvl:,.2f} ({current_data.token1_percentage:.1f}%)\n\n"
+            message += f"{token0_emoji} {current_data.token0_symbol}:\n"
+            message += f"数量: {prev_data.token0_amount:,.0f} → {current_data.token0_amount:,.0f} ({token0_amount_change:+.1f}%)\n"
+            message += f"TVL: ${prev_data.token0_tvl:,.0f} → ${current_data.token0_tvl:,.0f} ({token0_tvl_change:+.1f}%)\n\n"
             
-            message += f"🔗 池地址: {current_data.pool_address[:10]}...{current_data.pool_address[-8:]}\n"
-            message += f"💎 总 TVL: ${current_data.tvl_usd:,.2f}"
+            # Token1变化
+            token1_amount_change = ((current_data.token1_amount - prev_data.token1_amount) / prev_data.token1_amount) * 100
+            token1_tvl_change = ((current_data.token1_tvl - prev_data.token1_tvl) / prev_data.token1_tvl) * 100
+            token1_emoji = "🟢" if token1_amount_change > 0 else "🔴"
+            
+            message += f"{token1_emoji} {current_data.token1_symbol}:\n"
+            message += f"数量: {prev_data.token1_amount:,.0f} → {current_data.token1_amount:,.0f} ({token1_amount_change:+.1f}%)\n"
+            message += f"TVL: ${prev_data.token1_tvl:,.0f} → ${current_data.token1_tvl:,.0f} ({token1_tvl_change:+.1f}%)"
             
             # 异步发送消息
             try:
@@ -832,43 +826,38 @@ class LPMonitor:
                 return f"⚪ {percent:.2f}%"   # 白色小幅下跌
 
     def print_status(self, pool_data_list: List[PoolData]) -> None:
-        """打印当前状态 - 统一表格显示所有LP池"""
-        print("\n" + "="*52)
-        print(f"📊 LP池监控状态 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("="*52)
-        
-        # 打印缓存统计
-        with self.price_cache_lock:
-            cache_stats = self.get_cache_stats()
-            dex_sources = cache_stats['dexscreener_sources']
-            print(f"💾 价格缓存: {cache_stats['cached_tokens']} 个代币 (DexScreener: {dex_sources})")
+        """打印当前状态 - 紧凑表格显示所有LP池"""
+        print(f"\n📊 LP池监控 {datetime.now().strftime('%H:%M:%S')} 💾缓存:{self.get_cache_stats()['cached_tokens']}个")
         
         if not pool_data_list:
             print("❌ 没有数据显示")
             return
-        print("="*52)
         
-        # 统一表格头部
-        print(f"\n{'池名称':<25} {'代币对':<12} {'TVL(USD)':<15}")
-        print("-" * 52)
-        
-        threshold = self.config['monitoring'].get('alert_threshold_percent', 5.0)
+        # 紧凑表格头部
+        print(f"{'池名称':<28} {'总TVL':<20} {'代币1':<40} {'代币2':<40}")
+        print("-" * 128)
         
         for data in pool_data_list:
-            # 格式化数据
-            pool_name = data.pool_name[:23] + ".." if len(data.pool_name) > 25 else data.pool_name
-            token_pair = f"{data.token0_symbol}/{data.token1_symbol}"[:10]
-            tvl_str = f"${data.tvl_usd:,.0f}"
+            # 格式化池名称
+            pool_name = data.pool_name
+          
+            # 格式化总TVL
+            if data.tvl_usd >= 1000000:
+                tvl_str = f"💎${data.tvl_usd/1000000:.1f}M"
+            elif data.tvl_usd >= 1000:
+                tvl_str = f"💰${data.tvl_usd/1000:.0f}K"
+            else:
+                tvl_str = f"💰${data.tvl_usd:.0f}"
             
-            # 打印主要信息行
-            print(f"{pool_name:<25} {token_pair:<12} {tvl_str:<15}")
+
+            # 格式化代币信息 - 更紧凑
+            token0_info = f"🔸{data.token0_percentage:.1f}% {data.token0_symbol} {data.token0_amount:,.0f} ${data.token0_tvl/1000:.0f}K"
+            token1_info = f"🔹{data.token1_percentage:.1f}% {data.token1_symbol} {data.token1_amount:,.0f} ${data.token1_tvl/1000:.0f}K"
             
-            # 打印详细代币信息（缩进显示）
-            print(f"  ├─ {data.token0_symbol}: {data.token0_amount:,.2f} @ ${data.token0_price_usd:.4f} (${data.token0_tvl:,.0f}, {data.token0_percentage:.1f}%)")
-            print(f"  └─ {data.token1_symbol}: {data.token1_amount:,.2f} @ ${data.token1_price_usd:.4f} (${data.token1_tvl:,.0f}, {data.token1_percentage:.1f}%)")
-            print()
+            # 打印一行显示所有信息
+            print(f"{pool_name:<28} {tvl_str:<20} {token0_info:<40} {token1_info:<40}")
         
-        print("="*52)
+        print("-" * 82)
     
     def get_cache_stats(self) -> Dict[str, int]:
         """获取缓存统计信息"""
